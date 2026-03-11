@@ -268,3 +268,6 @@ If you have any questions or run into issues, please:
 - Check CORS configuration in backend
 - Verify frontend dependencies are installed
 
+=======
+# rag-with-fastapi
+>>>>>>> 531e3ecc340bd8ce4fb82325b90983024f9d2c1e
