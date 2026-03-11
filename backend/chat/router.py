@@ -6,10 +6,11 @@ from pydantic import BaseModel
 from typing import List, Literal, Optional
 
 from backend.database.base import get_db
-from backend.auth.router import get_current_user
+from backend.auth.service import get_current_user
 from backend.auth.models import User
 from backend.documents.models import Document
 from backend.chat.rag import build_chain
+from backend.chat.service import get_ready_doc_or_raise
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -24,35 +25,19 @@ class ChatRequest(BaseModel):
     history: Optional[List[ChatTurn]] = None
 
 
-def _get_ready_doc_or_raise(user_id: int, db: Session):
-    """Check that user has at least one ready document."""
-    doc = db.query(Document).filter(
-        Document.user_id == user_id,
-        Document.status == "ready"
-    ).first()
-    if not doc:
-        raise HTTPException(
-            status_code=400,
-            detail="No documents ready. Please upload a PDF first."
-        )
-    return doc
-
-
 @router.post("/")
 def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    _get_ready_doc_or_raise(current_user.id, db)
+    get_ready_doc_or_raise(current_user.id, db)
 
     payload = {
         "question": request.question,
         "history": [t.model_dump() for t in (request.history or [])]
     }
 
-    # FIX: build_chain now returns (chain, retrieve_docs)
-    # Use retrieve_docs for sources, chain for the answer — single retrieval each
     chain, retrieve_docs = build_chain(user_id=current_user.id)
 
     source_docs = retrieve_docs(payload)
@@ -84,7 +69,7 @@ async def chat_stream(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _get_ready_doc_or_raise(current_user.id, db)
+    get_ready_doc_or_raise(current_user.id, db)
 
     chain, _ = build_chain(user_id=current_user.id)
 
