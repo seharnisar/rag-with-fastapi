@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from backend.documents.models import Document
+from backend.documents.models import Document, DocumentStatus
 
 
 def get_ready_doc_or_raise(user_id: int, db: Session):
@@ -10,7 +10,7 @@ def get_ready_doc_or_raise(user_id: int, db: Session):
     """
     doc = db.query(Document).filter(
         Document.user_id == user_id,
-        Document.status == "ready"
+        Document.status == DocumentStatus.READY
     ).first()
     if not doc:
         raise HTTPException(

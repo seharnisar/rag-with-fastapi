@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.config import settings
 import logging
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -13,15 +14,12 @@ def get_llm(temperature: float = 0.3):
     return ChatOllama(
         model="llama3",
         base_url=settings.OLLAMA_BASE_URL,
-        temperature=temperature
+        temperature=temperature,
+        num_ctx=2048
     )
 
 
 class NomicQueryEmbeddings(OllamaEmbeddings):
-    """
-    Wraps OllamaEmbeddings to prepend search_query: prefix at query time.
-    Keeps stored chunk text clean — prefix only applied during embedding.
-    """
     def embed_query(self, text: str) -> list:
         return super().embed_query("search_query: " + text)
 
@@ -38,17 +36,10 @@ def get_user_vectorstore(user_id: int):
     )
 
 
-def rewrite_query(question: str, history: list) -> str:
-    """
-    Use LLM to rewrite the question into a self-contained search query
-    using conversation history. Falls back to original on failure.
-    """
-
+async def rewrite_query(question: str, history: list) -> str:
     if not history:
         return question
 
-    # Only use the last 2 turns (1 user + 1 assistant) to avoid
-    # the LLM grabbing context from earlier unrelated topics
     recent_history = history[-2:]
     history_text = ""
     for turn in recent_history:
@@ -76,7 +67,7 @@ def rewrite_query(question: str, history: list) -> str:
 
     try:
         llm = get_llm(temperature=0.0)
-        response = llm.invoke([
+        response = await llm.ainvoke([
             SystemMessage(content=system),
             HumanMessage(content=user_msg)
         ])
@@ -113,23 +104,12 @@ def format_history(history: list) -> str:
     return "\n".join(lines)
 
 
-def build_chain(user_id: int):
-    vectorstore = get_user_vectorstore(user_id)
-
-    retriever = vectorstore.as_retriever(
-    search_type="similarity_score_threshold",
-    search_kwargs={
-        "k": 8,
-        "score_threshold": 0.3
-    }
-)
-
-    prompt = ChatPromptTemplate.from_template("""
+prompt = ChatPromptTemplate.from_template("""
 You are a helpful assistant that answers questions strictly based on the provided context.
 
 Rules:
-- Read the context carefully. Only answer if the context DIRECTLY discusses the topic in the question.
-- If the context contains related but different topics, do NOT use them to answer. Say: "This topic is not covered in your uploaded documents."
+- Answer based on any relevant information found in the context, even if partial.
+- Only say "This topic is not covered in your uploaded documents." if there is truly zero mention of the topic anywhere in the context.
 - Do NOT pad the answer with unrelated information from the context.
 - Do NOT explain other protocols or concepts just because they appear in the context.
 - If multiple chunks cover different aspects of the topic, combine them into a complete answer.
@@ -149,23 +129,36 @@ Question: {question}
 Answer:
 """)
 
-    def retrieve_docs(payload: dict) -> list:
-        question = (payload.get("question") or "").strip()
-        history = payload.get("history") or []
-        search_query = rewrite_query(question, history)
-        docs = retriever.invoke(search_query)
-        logger.debug("Retrieved %d docs for query: '%s'", len(docs), search_query)
-        return docs
 
-    chain = (
-        {
-            "context": lambda payload: format_docs(retrieve_docs(payload)),
-            "history": lambda payload: format_history(payload.get("history") or []),
-            "question": lambda payload: payload.get("question", ""),
+def build_chain(user_id: int):
+    vectorstore = get_user_vectorstore(user_id)
+
+    retriever = vectorstore.as_retriever(
+        search_type="similarity_score_threshold",
+        search_kwargs={
+            "k": 5,
+            "score_threshold": 0.3
         }
-        | prompt
-        | get_llm()
-        | StrOutputParser()
     )
 
-    return chain, retrieve_docs
+    async def retrieve_docs(payload: dict) -> list:
+        question = (payload.get("question") or "").strip()
+        history = payload.get("history") or []
+        search_query = await rewrite_query(question, history)
+        docs = await retriever.ainvoke(search_query)
+        logger.info("Retrieved %d docs for query: '%s'", len(docs), search_query)
+        for i, doc in enumerate(docs):
+            logger.info("Chunk %d: %s", i, doc.page_content[:150])
+        return docs
+
+    async def rag_chain(payload: dict):
+        docs = await retrieve_docs(payload)
+        chain_input = {
+            "context": format_docs(docs),
+            "history": format_history(payload.get("history") or []),
+            "question": payload.get("question", ""),
+        }
+        chain = prompt | get_llm() | StrOutputParser()
+        return chain.astream(chain_input)
+
+    return rag_chain, retrieve_docs

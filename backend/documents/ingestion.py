@@ -10,7 +10,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Patterns that indicate a chunk is junk (cover, TOC, publisher metadata)
 JUNK_PATTERNS = [
     r"^M\s*A\s*N\s*N\s*I\s*N\s*G",
     r"IN ACTION\s*$",
@@ -46,7 +45,6 @@ def is_junk_chunk(text: str) -> bool:
         logger.debug("FILTERED (junk pattern): %s", text[:80])
         return True
 
-    # Looks like a TOC — lots of short lines with dots/numbers
     lines = text.splitlines()
     dot_lines = sum(1 for l in lines if re.search(r"\.{3,}|\s{2,}\d+$", l))
     if len(lines) > 3 and dot_lines / max(len(lines), 1) > 0.4:
@@ -57,8 +55,6 @@ def is_junk_chunk(text: str) -> bool:
         logger.debug("FILTERED (TOC keyword): %s", text[:80])
         return True
 
-    # FIX: Lowered from 0.4 → 0.25 — technical networking content has lots of
-    # acronyms (ATM, LAN, SMTF), numbers, and punctuation that lower alpha ratio
     alpha_ratio = sum(c.isalpha() for c in text) / max(len(text), 1)
     if alpha_ratio < 0.25:
         logger.debug("FILTERED (low alpha %.2f): %s", alpha_ratio, text[:80])
@@ -90,10 +86,6 @@ def get_user_vectorstore(user_id: int):
 
 
 def looks_like_front_matter(text: str) -> bool:
-    """
-    Heuristic to detect cover/TOC pages so we can skip them
-    without a hard-coded page count.
-    """
     text_lower = text.lower().strip()
     front_matter_signals = [
         "table of contents",
@@ -105,26 +97,21 @@ def looks_like_front_matter(text: str) -> bool:
         "printed in",
     ]
     signal_hits = sum(1 for s in front_matter_signals if s in text_lower)
-    # Also flag very short pages (covers, blank pages)
     if len(text.strip()) < 150:
         return True
     return signal_hits >= 2
 
 
-def ingest_document(file_path: str, user_id: int):
+async def ingest_document(file_path: str, user_id: int):
     loader = PyMuPDFLoader(file_path)
     pages = loader.load()
 
-    # FIX: Replace hard-coded pages[5:] with content-based front matter detection
     pages = [p for p in pages if not looks_like_front_matter(p.page_content)]
     logger.info("After front-matter filtering: %d pages remaining", len(pages))
 
-    # FIX: Larger chunk_size (800) fits full concept explanations in one chunk.
-    #      Reduced overlap (150) avoids excessive duplication while still
-    #      preserving cross-boundary context.
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=150,
+        chunk_size=1000,
+        chunk_overlap=300,
         separators=["\n\n", "\n", ".", "!", "?", " "]
     )
     chunks = splitter.split_documents(pages)
@@ -146,7 +133,7 @@ def ingest_document(file_path: str, user_id: int):
     batch_size = 500
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
-        vectorstore.add_documents(batch)
+        await vectorstore.aadd_documents(batch)
         logger.info(
             "Ingested batch %d/%d",
             i // batch_size + 1,
