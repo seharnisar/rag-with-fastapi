@@ -11,27 +11,10 @@ from backend.auth.models import User
 from backend.documents.models import Document
 from backend.chat.rag import build_chain, format_docs
 from backend.chat.service import get_ready_doc_or_raise
+from backend.schemas import ChatTurn, ChatRequest, ChatResponse, DebugSearchResult
+
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
-
-
-class ChatTurn(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str
-
-class ChatRequest(BaseModel):
-    question: str
-    history: Optional[List[ChatTurn]] = None
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: List[str]
-
-class DebugSearchResult(BaseModel):
-    score: float
-    preview: str
-
 
 @router.post("/", response_model=ChatResponse)
 async def chat(
@@ -94,3 +77,4 @@ async def chat_stream(
             await asyncio.sleep(0)
 
     return StreamingResponse(token_generator(), media_type="text/plain")
+    

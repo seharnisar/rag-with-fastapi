@@ -1,5 +1,6 @@
 from backend.database.base import SessionLocal
-from backend.documents.models import Document, DocumentStatus
+from backend.documents.models import Document
+from backend.enums import DocumentStatus
 from backend.documents.ingestion import ingest_document
 
 

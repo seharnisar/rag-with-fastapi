@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from backend.documents.models import Document, DocumentStatus
+from backend.documents.models import Document
+from backend.enums import DocumentStatus
 
 
 def get_ready_doc_or_raise(user_id: int, db: Session):

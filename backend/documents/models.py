@@ -1,14 +1,8 @@
-from enum import Enum
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.sql import func
 from backend.database.base import Base
-
-
-class DocumentStatus(str, Enum):
-    PROCESSING = "processing"
-    READY = "ready"
-    FAILED = "failed"
+from backend.enums import DocumentStatus
 
 
 class Document(Base):
@@ -23,3 +17,4 @@ class Document(Base):
         default=DocumentStatus.PROCESSING
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
