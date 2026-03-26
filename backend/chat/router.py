@@ -16,7 +16,7 @@ from backend.schemas import ChatTurn, ChatRequest, ChatResponse, DebugSearchResu
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-@router.post("/", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
@@ -45,7 +45,7 @@ async def chat(
     return ChatResponse(answer=answer, sources=sources)
 
 
-@router.get("/debug/search", response_model=List[DebugSearchResult])
+@router.get("/debug_search", response_model=List[DebugSearchResult])
 def debug_search(q: str, current_user: User = Depends(get_current_user)):
     from backend.chat.rag import get_user_vectorstore
     vectorstore = get_user_vectorstore(current_user.id)

@@ -50,7 +50,7 @@ def upload_document(
     return DocumentUploadResponse(message="File uploaded, processing started", document_id=doc.id)
 
 
-@router.get("/", response_model=List[DocumentResponse])
+@router.get("", response_model=List[DocumentResponse])
 def list_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
